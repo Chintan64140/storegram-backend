@@ -1,0 +1,334 @@
+STOREGRAM PLATFORM API DOCUMENTATION
+====================================
+Server URL: http://localhost:5000
+API Base URL: http://localhost:5000/api
+Publisher Base URL: http://localhost:5000/publisher
+Paths below are written exactly as mounted in Express when they start with /api or /publisher.
+Auth, user, referral, storage, folder, link, payment, admin, and track sections are relative to /api when shown without the /api prefix.
+Note: Endpoints requiring "Bearer Token" must have `Authorization: Bearer <your_token>` in the request headers.
+
+---------------------------------------------------------
+1. AUTHENTICATION FLOW (/api/auth)
+---------------------------------------------------------
+
+POST /auth/signup
+- Role: Public
+- Body: { "name": "John", "email": "john@mail.com", "mobile": "1234567890", "password": "pass", "role": "VIEWER" | "PUBLISHER", "referralCode": "OPTIONAL_A1B2C3" }
+- Description: Creates a new user account. Provisions 5GB storage for VIEWERS and 15GB for PUBLISHERS.
+
+POST /auth/login
+- Role: Public
+- Body: { "email": "john@mail.com", "password": "pass" }
+- Returns: { "user": {...}, "token": "jwt_token" }
+
+POST /auth/google
+- Role: Public
+- Body: { "email": "google@mail.com", "name": "John G", "role": "VIEWER", "referralCode": "OPTIONAL" }
+- Description: Logs in via Google. Creates an account if none exists and auto-verifies it. Returns JWT.
+
+POST /auth/send-otp
+- Role: Public
+- Body: { "email": "user@mail.com" }
+- Description: Sends a 6-digit OTP to the user's email for account verification.
+
+POST /auth/verify-otp
+- Role: Public
+- Body: { "email": "user@mail.com", "otp": "123456" }
+- Description: Verifies the OTP and marks the user's account as verified.
+
+POST /auth/forgot-password
+- Role: Public
+- Body: { "email": "user@mail.com" }
+- Description: Softly sends an OTP to email if the user exists for password recovery.
+
+POST /auth/reset-password
+- Role: Public
+- Body: { "email": "user@mail.com", "otp": "123456", "newPassword": "new_password" }
+- Description: Resets the password using the OTP.
+
+POST /auth/change-password
+- Role: Any Authenticated
+
+- Body: { "oldPassword": "...", "newPassword": "..." }
+
+POST /auth/refresh-token
+- Role: Public
+- Body: { "token": "old_jwt_token" }
+- Returns: A new, fresh JWT token.
+
+POST /auth/logout
+- Role: Any Authenticated
+- Description: Removes access token from database, killing the active session securely.
+
+
+---------------------------------------------------------
+2. PUBLISHER MODULE (/publisher) 
+Note: These use the /publisher base path, not /api/publisher.
+All /publisher endpoints require an authenticated, approved PUBLISHER account.
+---------------------------------------------------------
+
+POST /publisher/content/upload
+- Role: Approved Publisher (Authenticated)
+- Format: multipart/form-data
+- Body:
+  file: video/file upload
+  title: optional title
+  duration: video duration in seconds
+- Storage: The uploaded file is saved in Cloudflare R2 using the existing R2/S3 client config. The local uploads folder is only temporary during upload and the temp file is deleted after R2 upload succeeds.
+- Description: Uploads publisher content to Cloudflare R2, saves only the public R2 URL and metadata in the files table, and returns a public short link.
+- Returns:
+  {
+    "message": "File uploaded successfully",
+    "shortLink": "http://localhost:5000/api/files/a1b2c3",
+    "tracking": {
+      "start": "http://localhost:5000/api/files/a1b2c3/view/start",
+      "heartbeat": "http://localhost:5000/api/files/a1b2c3/view/:viewId/heartbeat",
+      "end": "http://localhost:5000/api/files/a1b2c3/view/:viewId/end"
+    },
+    "file": { ... }
+  }
+
+GET /publisher/analytics/dashboard
+- Role: Approved Publisher (Authenticated)
+- Returns: { "totalViews": 1500, "totalFiles": 12, "totalReferredUsers": 4, "walletBalance": 50.00 }
+
+GET /publisher/analytics/views
+- Role: Approved Publisher (Authenticated)
+- Returns: List of the 100 most recent views on their content (watch time, location, IP).
+
+GET /publisher/analytics/users
+- Role: Approved Publisher (Authenticated)
+- Returns: List of users who signed up using this publisher's referral code.
+
+GET /publisher/content
+- Role: Approved Publisher (Authenticated)
+- Returns: Array of all uploaded files.
+
+GET /publisher/content/:id
+- Role: Approved Publisher (Authenticated)
+- Returns: Specific metadata for one file.
+
+PUT /publisher/content/:id
+- Role: Approved Publisher (Authenticated)
+- Body: { "title": "New Title", "description": "New Description" }
+
+DELETE /publisher/content/:id
+- Role: Approved Publisher (Authenticated)
+- Description: Deletes file from database AND permanently deletes it from Cloudflare R2 bucket.
+
+
+---------------------------------------------------------
+3. VIEWER STORAGE MODULE (/api/storage & /api/folders)
+---------------------------------------------------------
+
+POST /api/storage/init
+- Role: Viewer (Authenticated)
+- Description: Provisions 5GB of storage capacity for the viewer if they don't have it.
+
+POST /api/storage/upload
+- Role: Viewer (Authenticated)
+- Format: multipart/form-data
+- Body: { "file": [File], "folderId": "OPTIONAL_UUID" }
+- Description: Uploads a file to Cloudflare R2. Strictly validates against storage_used to prevent exceeding 5GB quota!
+
+GET /api/storage/files?folderId=UUID
+- Role: Viewer (Authenticated)
+- Description: Lists files. Pass folderId to view files inside a specific folder.
+
+GET /api/storage/files/:fileId
+- Role: Viewer (Authenticated)
+- Description: Get specific file details.
+
+DELETE /api/storage/files/:fileId
+- Role: Viewer (Authenticated)
+- Description: Deletes file from database, removes it from Cloudflare R2, and refunds the used storage capacity back to the user.
+
+GET /api/storage/usage
+- Role: Viewer (Authenticated)
+- Returns: { "storageUsedMB": 150, "storageTotalMB": 5120, "percentage": 2.9 }
+
+POST /api/folders
+- Role: Viewer (Authenticated)
+- Body: { "name": "My Folder", "parentId": "OPTIONAL_UUID" } 
+
+GET /api/folders?parentId=UUID
+- Role: Viewer (Authenticated)
+
+PUT /api/folders/:folderId
+- Role: Viewer (Authenticated)
+- Body: { "name": "New Name", "parentId": "OPTIONAL_UUID" }
+
+DELETE /api/folders/:folderId
+- Role: Viewer (Authenticated)
+
+
+---------------------------------------------------------
+4. FILE SHARING LINKS (/api/links)
+---------------------------------------------------------
+
+POST /api/links/create
+- Role: Any Authenticated
+- Body: { "fileId": "UUID", "folderId": "UUID", "password": "optional_secret", "expiresInDays": 7 }
+- Returns: Secure short link (e.g., /api/links/a1b2c3)
+
+POST /api/links/:linkId/revoke
+- Role: Link Creator (Authenticated)
+- Description: Instantly disables the shared link.
+
+GET /api/links/:linkId
+- Role: Public
+- Description: Resolves short link. If password protected, returns 401 with `isPasswordProtected: true`.
+
+POST /api/links/:linkId/password
+- Role: Public
+- Body: { "password": "..." }
+- Description: Unlocks and returns the file payload if the password is correct.
+
+
+---------------------------------------------------------
+5. PUBLISHER SHORT LINK, VIEW TRACKING & EARNINGS (/api/files)
+---------------------------------------------------------
+
+GET /api/files/:shortId
+- Role: Public
+- Description: Viewer opens the publisher's short link and receives video metadata plus tracking info.
+- Returns:
+  {
+    "message": "File retrieved successfully",
+    "tracking": {
+      "thresholdSeconds": 12,
+      "startUrl": "http://localhost:5000/api/files/a1b2c3/view/start"
+    },
+    "file": {
+      "id": "UUID",
+      "title": "Video title",
+      "file_url": "https://...",
+      "duration": 120,
+      "short_id": "a1b2c3"
+    }
+  }
+
+POST /api/files/:shortId/view/start
+- Role: Public
+- Body Optional:
+  { "location": "Mumbai, India" }
+  OR { "city": "Mumbai", "region": "Maharashtra", "country": "India" }
+- Description: Creates a view tracking row with watch_time = 0, is_valid = false, location, IP address, file_id, and publisher_id.
+- Returns: { "message": "View tracking started", "viewId": "UUID", "thresholdSeconds": 12 }
+
+POST /api/files/:shortId/view/:viewId/heartbeat
+- Role: Public
+- Body: { "watchTimeSeconds": 15, "location": "Mumbai, India" }
+- Description: Updates watch_time, location, and IP address while the viewer watches the video.
+- Returns:
+  {
+    "message": "View heartbeat saved",
+    "viewId": "UUID",
+    "watchTimeSeconds": 15,
+    "thresholdSeconds": 12,
+    "canCountView": true
+  }
+
+POST /api/files/:shortId/view/:viewId/end
+- Role: Public
+- Body: { "watchTimeSeconds": 15, "location": "Mumbai, India" }
+- Description: Finalizes viewer tracking. If valid, it marks the view as valid and credits publisher earning once for that viewId.
+- Valid View Rule: Viewer must watch at least 10% of video duration, capped at 20 seconds for long videos.
+- Example:
+  60 second video = 6 seconds needed.
+  120 second video = 12 seconds needed.
+  500 second video = 20 seconds needed.
+- If valid, API does all of this:
+  1. Updates views.is_valid = true.
+  2. Increments files.total_views.
+  3. Increments files.total_earnings.
+  4. Adds 0.01 to users.wallet_balance for the publisher.
+  5. Inserts an APPROVED earning row in transactions.
+- Returns:
+  {
+    "message": "Valid view counted and publisher earning credited",
+    "viewId": "UUID",
+    "finalWatchTime": 15,
+    "thresholdSeconds": 12,
+    "isValidView": true,
+    "credited": true,
+    "earningAmount": 0.01,
+    "walletBalance": 4.21
+  }
+
+POST /api/files/:shortId/view
+- Role: Public
+- Body: { "watchTimeSeconds": 15, "location": "Mumbai, India" }
+- Description: Legacy one-call tracking API. Prefer start -> heartbeat -> end for real video players.
+
+Legacy Protected Tracking (/api/track)
+- POST /api/track/start
+- POST /api/track/heartbeat
+- POST /api/track/end
+- Role: Any Authenticated
+- Note: Still exists for compatibility, but publisher short-link tracking should use /api/files/:shortId/view/*.
+
+
+---------------------------------------------------------
+6. PAYMENT & WITHDRAWAL MODULE (/api/payments)
+---------------------------------------------------------
+
+GET /api/payments/earnings
+- Role: Publisher (Authenticated)
+- Returns: Current wallet balance, total historical earnings, and full transaction history.
+
+POST /api/payments/request
+- Role: Publisher (Authenticated)
+- Body: { "amount": 100, "referenceId": "Bank details" }
+- Description: Publisher requests manual cashout. Immediately deducts from wallet and creates a PENDING transaction.
+
+Note: Publisher earnings are credited by valid public views only. Manual earning simulation endpoint has been removed from routes.
+
+
+---------------------------------------------------------
+7. ADMIN OVERRIDE CONTROLS (/api/admin)
+---------------------------------------------------------
+
+GET /api/admin/analytics/dashboard
+- Role: Admin
+- Returns: Total users, files, views, pending withdrawals, and massive total platform storage used (in MB).
+
+GET /api/admin/users
+GET /api/admin/users/:userId
+- Role: Admin
+
+POST /api/admin/users/block
+- Role: Admin
+- Body: { "userId": "...", "isBlocked": true/false }
+- Description: Blocks or unblocks a user from using the platform.
+
+POST /api/admin/users/change-role
+- Role: Admin
+- Body: { "userId": "...", "role": "PUBLISHER" }
+
+POST /api/admin/publishers/approve
+- Role: Admin
+- Body: { "publisherId": "..." }
+
+POST /api/admin/storage/increase (and /decrease)
+- Role: Admin
+- Body: { "userId": "...", "additionalMB": 10000 }
+- Description: Permanently overrides a user's total allowed storage capacity.
+
+DELETE /api/admin/files/:fileId
+- Role: Admin
+- Description: Forcibly wipes a user's file from the database and Cloudflare R2 bucket.
+
+GET /api/admin/withdraw/requests
+- Role: Admin
+- Returns: Array of all PENDING transactions needing payout.
+
+POST /api/admin/withdraw/approve
+- Role: Admin
+- Body: { "transactionId": "...", "status": "APPROVED" }
+- Description: Approves payout, and AUTOMATICALLY credits the 5% referral bonus directly to the referring publisher's wallet.
+
+POST /api/admin/withdraw/reject
+- Role: Admin
+- Body: { "transactionId": "...", "status": "REJECTED" }
+- Description: Rejects the payout and fully refunds the amount back to the publisher's wallet.
