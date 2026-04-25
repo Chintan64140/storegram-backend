@@ -116,3 +116,49 @@ export const verifyOtp = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+export const updateProfile = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { name, mobile } = req.body;
+
+    const { data, error } = await supabase
+      .from("users")
+      .update({ name, mobile })
+      .eq("id", userId)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    res.json({ message: "Profile updated successfully", user: data });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+export const updateBankDetails = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { bankName, accountName, accountNumber, ifscCode, paypalEmail } = req.body;
+
+    const { data, error } = await supabase
+      .from("users")
+      .update({
+        bank_name: bankName,
+        account_name: accountName,
+        account_number: accountNumber,
+        ifsc_code: ifscCode,
+        paypal_email: paypalEmail
+      })
+      .eq("id", userId)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    res.json({ message: "Bank details updated successfully", user: data });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
