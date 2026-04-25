@@ -191,6 +191,7 @@ export const uploadFile = async (req, res) => {
     const user = req.user;
     const userId = user.id;
     const { title, duration } = req.body;
+    const normalizedFolderId = String(req.body?.folderId || "").trim() || null;
     const file = req.file;
 
     // 🔒 Role check
@@ -208,6 +209,27 @@ export const uploadFile = async (req, res) => {
 
     if (!file) {
       return res.status(400).json({ error: "No file uploaded" });
+    }
+
+    if (normalizedFolderId) {
+      const { data: folder, error: folderError } = await supabase
+        .from("folders")
+        .select("id")
+        .eq("id", normalizedFolderId)
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (folderError) {
+        throw folderError;
+      }
+
+      if (!folder) {
+        if (fs.existsSync(file.path)) {
+          fs.unlinkSync(file.path);
+        }
+
+        return res.status(404).json({ error: "Folder not found" });
+      }
     }
 
     // 📦 File validation
@@ -292,6 +314,7 @@ export const uploadFile = async (req, res) => {
           file_url: fileUrl,
           duration: finalDuration,
           size: file.size,
+          folder_id: normalizedFolderId,
           short_id: shortId,
           total_views: 0,
           total_earnings: 0,

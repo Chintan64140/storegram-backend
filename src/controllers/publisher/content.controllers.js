@@ -6,14 +6,23 @@ import { createPaginationMeta, getPaginationParams } from '../../utils/paginatio
 export const getPublisherContent = async (req, res) => {
   try {
     const userId = req.user.id;
+    const normalizedFolderId = String(req.query.folderId || '').trim() || null;
+    const rootOnly = String(req.query.rootOnly || '').toLowerCase() === 'true';
     const { page, limit, from, to } = getPaginationParams(req.query, { defaultLimit: 10, maxLimit: 100 });
 
-    const { data: files, error, count } = await supabase
+    let query = supabase
       .from('files')
       .select('*', { count: 'exact' })
       .eq('publisher_id', userId)
-      .order('created_at', { ascending: false })
-      .range(from, to);
+      .order('created_at', { ascending: false });
+
+    if (normalizedFolderId) {
+      query = query.eq('folder_id', normalizedFolderId);
+    } else if (rootOnly) {
+      query = query.is('folder_id', null);
+    }
+
+    const { data: files, error, count } = await query.range(from, to);
 
     if (error) throw error;
     res.json({
@@ -49,10 +58,45 @@ export const updatePublisherContent = async (req, res) => {
     const userId = req.user.id;
     const { id } = req.params;
     const { title, description } = req.body;
+    const hasFolderId = Object.prototype.hasOwnProperty.call(req.body || {}, 'folderId');
+    const normalizedFolderId = hasFolderId
+      ? String(req.body.folderId || '').trim() || null
+      : undefined;
+    const updates = {};
+
+    if (title !== undefined) {
+      updates.title = title;
+    }
+
+    if (description !== undefined) {
+      updates.description = description;
+    }
+
+    if (hasFolderId) {
+      if (normalizedFolderId) {
+        const { data: folder, error: folderError } = await supabase
+          .from('folders')
+          .select('id')
+          .eq('id', normalizedFolderId)
+          .eq('user_id', userId)
+          .maybeSingle();
+
+        if (folderError) throw folderError;
+        if (!folder) {
+          return res.status(404).json({ error: 'Folder not found' });
+        }
+      }
+
+      updates.folder_id = normalizedFolderId;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'No content changes were provided' });
+    }
 
     const { data: file, error } = await supabase
       .from('files')
-      .update({ title, description })
+      .update(updates)
       .eq('id', id)
       .eq('publisher_id', userId)
       .select()

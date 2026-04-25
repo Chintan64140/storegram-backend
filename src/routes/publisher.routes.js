@@ -13,6 +13,12 @@ import {
   updatePublisherContent,
   deletePublisherContent
 } from '../controllers/publisher/content.controllers.js';
+import {
+  createFolder,
+  getFolders,
+  updateFolder,
+  deleteFolder
+} from '../controllers/folder.controllers.js';
 
 const router = express.Router();
 
@@ -29,6 +35,11 @@ router.get('/analytics/users', getUsersAnalytics);
 // ---------------------------
 // Content Endpoints
 // ---------------------------
+router.post('/folders', createFolder);
+router.get('/folders', getFolders);
+router.put('/folders/:folderId', updateFolder);
+router.delete('/folders/:folderId', deleteFolder);
+
 router.post('/content/upload', uploadSingleFile, uploadFile);
 router.get('/content', getPublisherContent);
 router.get('/content/:id', getPublisherContentById);
