@@ -233,12 +233,25 @@ export const uploadFile = async (req, res) => {
     }
 
     // 📦 File validation
-    const allowedMimeTypes = [
-      "video/mp4",
-      "video/mkv",
-      "image/png",
-      "image/jpeg",
-    ];
+const allowedMimeTypes = [
+  // VIDEO
+  "video/mp4",
+  "video/x-matroska", // mkv
+  "video/webm",
+  "video/quicktime", // mov
+  "video/x-m4v", // m4v
+
+  // IMAGE
+  "image/png",
+  "image/jpeg", // jpg, jpeg
+  "image/gif",
+  "image/webp",
+  "image/svg+xml",
+
+  // DOCUMENT
+  "application/pdf",
+  "text/plain",
+];
 
     if (!allowedMimeTypes.includes(file.mimetype)) {
       return res.status(400).json({ error: "Invalid file type" });
