@@ -1,27 +1,16 @@
-import nodemailer from 'nodemailer';
+import sgMail from '@sendgrid/mail';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
-/**
- * Configure standard Nodemailer transporter.
- * Ensure you set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS in your .env file
- */
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || 'smtp.gmail.com', // default to gmail
-  port: process.env.SMTP_PORT || 587,
-  secure: process.env.SMTP_SECURE === 'true' ? true : false, 
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-});
+// Set SendGrid API Key
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 export const sendEmailOTP = async (to, otp) => {
   try {
-    const mailOptions = {
-      from: `"StoreGram" <${process.env.SMTP_USER}>`,
+    const msg = {
       to,
+      from: process.env.SENDGRID_FROM_EMAIL,
       subject: 'StoreGram - Password Reset OTP',
       html: `
         <div style="font-family: Arial, sans-serif; padding: 20px;">
@@ -36,11 +25,14 @@ export const sendEmailOTP = async (to, otp) => {
       `,
     };
 
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`Email sent: ${info.messageId}`);
+    await sgMail.send(msg);
+    console.log(`Email sent to ${to}`);
     return true;
   } catch (error) {
     console.error('Error sending email:', error);
+    if (error.response) {
+      console.error(error.response.body);
+    }
     return false;
   }
 };
