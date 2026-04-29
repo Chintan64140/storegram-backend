@@ -193,7 +193,7 @@ export const forgotPassword = async (req, res) => {
 
     if (error || !user) {
       // Don't leak whether user exists or not
-      return res.json({ message: "If the email is registered, an OTP will be sent softly." });
+      return res.status(404).json({ message: "Email not found! Please check email." });
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000);
