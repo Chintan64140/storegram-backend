@@ -2,12 +2,51 @@ import { supabase } from "../config/supabase.js";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
+import { OAuth2Client } from "google-auth-library";
 import { sendEmailOTP } from "../utils/sendEmail.js";
 
 const generateToken = (userId) => {
   return jwt.sign({ id: userId }, process.env.JWT_SECRET, {
     expiresIn: "7d",
   });
+};
+
+const googleClient = new OAuth2Client();
+
+const getGoogleAudiences = (clientId) => {
+  const configuredClientIds = [
+    process.env.GOOGLE_WEB_CLIENT_ID,
+    process.env.GOOGLE_ANDROID_CLIENT_ID,
+    process.env.GOOGLE_IOS_CLIENT_ID,
+    ...(process.env.GOOGLE_ALLOWED_CLIENT_IDS || "").split(","),
+  ]
+    .map((value) => value?.trim())
+    .filter(Boolean);
+
+  if (configuredClientIds.length > 0) {
+    return [...new Set(configuredClientIds)];
+  }
+
+  return clientId ? [clientId] : undefined;
+};
+
+const verifyGoogleIdentity = async ({ idToken, clientId }) => {
+  const ticket = await googleClient.verifyIdToken({
+    idToken,
+    audience: getGoogleAudiences(clientId),
+  });
+
+  const payload = ticket.getPayload();
+
+  if (!payload?.email || !payload?.name) {
+    throw new Error("Google account is missing the required profile information");
+  }
+
+  if (!payload.email_verified) {
+    throw new Error("Google email is not verified");
+  }
+
+  return payload;
 };
 
 export const signup = async (req, res) => {
@@ -351,17 +390,25 @@ export const verifyOtp = async (req, res) => {
 
 export const googleAuth = async (req, res) => {
   try {
-    const { email, name, role, referralCode } = req.body;
-    
-    if (!email || !name) {
-      return res.status(400).json({ error: "Email and name are required from Google" });
+    const { idToken, clientId, role, referralCode } = req.body;
+
+    if (!idToken) {
+      return res.status(400).json({ error: "Google ID token is required" });
     }
+
+    const googleProfile = await verifyGoogleIdentity({ idToken, clientId });
+    const email = googleProfile.email.toLowerCase();
+    const name = googleProfile.name;
 
     let { data: user, error } = await supabase
       .from("users")
       .select("*")
       .eq("email", email)
       .single();
+
+    if (error && error.code !== "PGRST116") {
+      throw error;
+    }
 
     if (!user) {
       // User doesn't exist, create a new one via Google
@@ -375,6 +422,10 @@ export const googleAuth = async (req, res) => {
       const defaultRole = role || "VIEWER";
       let storage_total = defaultRole === "PUBLISHER" ? 15360 : 5120;
       let is_approved = defaultRole === "PUBLISHER" ? false : true;
+      const hashedPassword = await bcrypt.hash(
+        "GOOGLE_LOGIN_" + crypto.randomBytes(8).toString("hex"),
+        10
+      );
 
       const { data: newUser, error: insertError } = await supabase
         .from("users")
@@ -388,7 +439,7 @@ export const googleAuth = async (req, res) => {
           is_approved,
           referral_code: myReferralCode,
           referred_by: referredBy,
-          password: "GOOGLE_LOGIN_" + crypto.randomBytes(8).toString("hex")
+          password: hashedPassword,
         }])
         .select()
         .single();
