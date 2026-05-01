@@ -162,3 +162,33 @@ export const updateBankDetails = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+export const getRecentViews = async (req, res) => {
+  try {
+    const ipAddress = req.ip || req.connection.remoteAddress;
+    const { limit = 4 } = req.query;
+
+    const { data: views, error } = await supabase
+      .from('views')
+      .select('*, files(*)')
+      .eq('ip_address', ipAddress)
+      .order('created_at', { ascending: false })
+      .limit(Number(limit) * 3); // Fetch more to account for duplicates
+
+    if (error) throw error;
+    
+    // remove duplicates based on file_id
+    const uniqueFiles = [];
+    const seen = new Set();
+    for (const view of views) {
+      if (!seen.has(view.file_id) && view.files) {
+        seen.add(view.file_id);
+        uniqueFiles.push(view.files);
+      }
+    }
+
+    res.json({ data: uniqueFiles.slice(0, Number(limit)) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
