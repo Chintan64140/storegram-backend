@@ -396,6 +396,10 @@ export const googleAuth = async (req, res) => {
       return res.status(400).json({ error: "Google ID token is required" });
     }
 
+    if (role === "ADMIN") {
+      return res.status(400).json({ error: "Admin accounts cannot use Google sign up or login" });
+    }
+
     const googleProfile = await verifyGoogleIdentity({ idToken, clientId });
     const email = googleProfile.email.toLowerCase();
     const name = googleProfile.name;
@@ -410,6 +414,10 @@ export const googleAuth = async (req, res) => {
       throw error;
     }
 
+    if (user?.role === "ADMIN") {
+      return res.status(400).json({ error: "Admin accounts cannot use Google sign up or login" });
+    }
+
     if (!user) {
       // User doesn't exist, create a new one via Google
       const myReferralCode = crypto.randomBytes(4).toString("hex").toUpperCase();
@@ -420,6 +428,11 @@ export const googleAuth = async (req, res) => {
       }
 
       const defaultRole = role || "VIEWER";
+
+      if (defaultRole === "ADMIN") {
+        return res.status(400).json({ error: "Admin accounts cannot use Google sign up or login" });
+      }
+
       let storage_total = defaultRole === "PUBLISHER" ? 15360 : 5120;
       let is_approved = defaultRole === "PUBLISHER" ? false : true;
       const hashedPassword = await bcrypt.hash(

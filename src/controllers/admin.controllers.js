@@ -2,6 +2,7 @@ import { supabase } from '../config/supabase.js';
 import { s3Client } from '../config/s3.js';
 import { DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { createPaginationMeta, getPaginationParams } from '../utils/pagination.js';
+import { sendPublisherApprovedEmail } from '../utils/sendEmail.js';
 
 const BYTES_PER_MB = 1024 * 1024;
 
@@ -500,6 +501,11 @@ export const approvePublisher = async (req, res) => {
     const { publisherId } = req.body;
     const { data, error } = await supabase.from('users').update({ is_approved: true }).eq('id', publisherId).select().single();
     if (error) throw error;
+
+    if (data?.email) {
+      await sendPublisherApprovedEmail(data.email, data.name);
+    }
+
     res.json({ message: 'Publisher approved', user: data });
   } catch (err) {
     res.status(500).json({ error: err.message });

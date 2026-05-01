@@ -36,3 +36,38 @@ export const sendEmailOTP = async (to, otp) => {
     return false;
   }
 };
+
+export const sendPublisherApprovedEmail = async (to, name) => {
+  try {
+    const msg = {
+      to,
+      from: process.env.SENDGRID_FROM_EMAIL,
+      subject: 'StoreGram - Publisher Account Approved',
+      html: `
+        <div style="font-family: Arial, sans-serif; padding: 20px; color: #111827;">
+          <h2 style="margin-bottom: 12px;">Your publisher account is approved</h2>
+          <p style="margin-bottom: 12px;">Hi ${name || 'Publisher'},</p>
+          <p style="margin-bottom: 12px;">
+            Your StoreGram publisher account has been reviewed and approved by our admin team.
+          </p>
+          <p style="margin-bottom: 12px;">
+            You can now sign in to your publisher dashboard and start uploading content.
+          </p>
+          <p style="margin-bottom: 0;">
+            Thanks for joining StoreGram.
+          </p>
+        </div>
+      `,
+    };
+
+    await sgMail.send(msg);
+    console.log(`Publisher approval email sent to ${to}`);
+    return true;
+  } catch (error) {
+    console.error('Error sending publisher approval email:', error);
+    if (error.response) {
+      console.error(error.response.body);
+    }
+    return false;
+  }
+};
